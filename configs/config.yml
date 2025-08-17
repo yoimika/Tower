@@ -1,0 +1,21 @@
+General:
+  fall: True
+  red_or_green: "red"
+  num_scenes: 1
+  video_length: 6
+  video_fps: 30
+Scene:
+  num_blocks: 17
+  ground: "default"
+  background: "default"
+  heightmap_resolution: 0.5
+Block:
+  num_colors: 
+    yellow: 7
+    blue: 9
+    white: 1
+  sizes: 
+    [0.5, 0.5, 1.5]: 8 
+    [1.5, 0.5, 0.5]: 9 
+  rot_range: [0, 90]
+  material: "wood"
