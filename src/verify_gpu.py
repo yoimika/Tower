@@ -43,5 +43,18 @@ def verify_rtx3090():
         print("错误: 未使用 GPU 渲染")
         return False
 
+# 修改 verify_gpu.py 中的设备检查逻辑
+def verify_gpu():
+    print("===== GPU 渲染配置验证 =====")
+    if bpy.context.scene.render.engine != 'CYCLES':
+        print("错误: 未使用 Cycles 渲染器")
+        return False
+    if bpy.context.scene.cycles.device != 'GPU':
+        print("错误: 未启用 GPU 渲染")
+        return False
+    print("SUCCESS: GPU 渲染已正确配置")
+    return True
+
 if __name__ == "__main__":
-    verify_rtx3090()
+    #verify_rtx3090()
+    verify_gpu()

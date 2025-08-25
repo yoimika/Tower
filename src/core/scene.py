@@ -1,6 +1,8 @@
 import bpy
 import math
 import random
+import os
+import sys
 from bpy.props import (
     PointerProperty,
     CollectionProperty,
@@ -10,9 +12,11 @@ from bpy.props import (
 )
 from bpy.types import Scene as BaseScene
 from mathutils import Vector
-from constants import COLORS
-from block import Block
-from heightmap import Heightmap
+project_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.append(project_root)
+from configs.constants import COLORS
+from .block import Block
+from .heightmap import Heightmap
 from utils.collision_check import CollisionDetector
 
 SEED = 42
@@ -292,20 +296,20 @@ class Scene(BaseScene):
         prefs = bpy.context.preferences
         cycles_prefs = prefs.addons['cycles'].preferences
 
-        cycles_prefs.compute_device_type = 'OPTIX'
+        #cycles_prefs.compute_device_type = 'OPTIX'
 
-        cycles_prefs.refresh_devices()
+        #cycles_prefs.refresh_devices()
 
-        enabled_devices = []
-        for device in cycles_prefs.devices:
-            if 'RTX 3090' in device.name or device.type == 'OPTIX':
-                device.use = True
-                enabled_devices.append(device.name)
+        #enabled_devices = []
+        #for device in cycles_prefs.devices:
+            #if 'RTX 3090' in device.name or device.type == 'OPTIX':
+                #device.use = True
+                #enabled_devices.append(device.name)
 
-        bpy.context.scene.cycles.device = 'GPU'
+        #bpy.context.scene.cycles.device = 'GPU'
 
-        if not enabled_devices:
-            raise RuntimeError("No RTX!")
+        #if not enabled_devices:
+            #raise RuntimeError("No RTX!")
         
         bpy.context.scene.cycles.use_adaptive_sampling = True
         bpy.context.scene.cycles.adaptive_threshold = 0.01

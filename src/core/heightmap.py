@@ -99,8 +99,9 @@ class Heightmap:
             for x in range(self.grid_x):
                 for y in range(self.grid_y):
                     if self.occupancy[x, y] >= 0.5 and self.occupancy[x, y] < 1.0:
-                        position = (x + self.resolution / 2 - self.width / 2,
-                                    y + self.resolution / 2 - self.depth / 2,
+                        x, y = self.grid_to_world(x, y)
+                        position = (x + self.resolution / 2,
+                                    y + self.resolution / 2,
                                     self.height[x, y] + size[2] / 2)
                         valid_positions.append(position)
         return valid_positions

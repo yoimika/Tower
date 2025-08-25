@@ -6,9 +6,12 @@ import yaml
 import random
 import numpy as np
 import bpy
+project_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.append(project_root)
 from core.block import Block
 from core.scene import Scene
 import math
+import ast
 
 SEED = 42
 np.random.seed(SEED)
@@ -36,6 +39,7 @@ def generate_blocks_data(config):
     num_blocks = config['Scene']['num_blocks']
     color_dic = config['Block']['num_colors']
     size_dic = config['Block']['sizes']
+    size_dic = {ast.literal_eval(key) : value for key, value in size_dic.items()}
     rot_range = config['Block']['rot_range']
     rot_range = [math.radius(rot_range[0]), math.radius(rot_range[1])]
     

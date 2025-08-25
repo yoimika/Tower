@@ -157,20 +157,18 @@ class CollisionDetector:
         
         return min_val, max_val
     
-    def check_block_collision(self, scene, new_position, new_size, new_rotation):
+    def check_block_collision(self, existing_blocks, new_position, new_size, new_rotation):
         """
         Check if a new block collides with existing blocks in the scene.
         """
         new_vertices = self.get_block_vertices(new_position, new_size, new_rotation)
         
-        for block in scene.blocks:
-            if not block.blender_object:
-                continue
+        for block in existing_blocks:
                 
             existing_vertices = self.get_block_vertices(
-                block.position, 
-                block.size, 
-                block.rotation
+                block['position'], 
+                block['size'], 
+                block['rotation']
             )
             
             if self.separating_axis_theorem(new_vertices, existing_vertices):

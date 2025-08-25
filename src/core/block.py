@@ -1,4 +1,8 @@
 import bpy
+import os
+import sys
+project_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.append(project_root)
 from bpy.props import (
     PointerProperty,
     CollectionProperty,
@@ -9,7 +13,7 @@ from bpy.props import (
 import bmesh
 from bpy.types import PropertyGroup as BasePropertyGroup
 from mathutils import Vector, Euler
-from constants import COLORS, MATERIALS
+from configs.constants import COLORS, MATERIALS
 
 """Class for a block."""
 class Block(BasePropertyGroup):
