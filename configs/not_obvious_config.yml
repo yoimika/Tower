@@ -2,14 +2,9 @@ General:
   SEED: 42
   INTERSECTION_THRESHOLD: 0.01
   FATNESS: 0.5
-  NUM_SCENES: 2   
-  RED_OR_GREEN: 'red'
+  NUM_SCENES: 1
   VIDEO_LEN: 6
   FPS: 30
-  DEGREE: 15
-  POINT:
-  PROJECTION_X: [-1.5, 2.5]
-  PROJECTION_Y: [-1.5, 1.5]
   ROT_DISCRETE: False
 Scene:
   num_blocks: 29

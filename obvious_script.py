@@ -39,7 +39,6 @@ class Heightmap:
     def update_heightmap(self, position, size, rotation):
         """
         Update the heightmap with a block at a given position and size.
-        The block can only be placed if the support area ratio is sufficient.
         """
         polygon = self.get_polygon(position, size, rotation)
         if position[2] != 0.75:
@@ -60,7 +59,6 @@ class Heightmap:
             new_multipoly = current_multipolygon.union(polygon)
             self.height[new_height] = new_multipoly
 
-        
     def get_polygon(self, position, size, rotation):
         """
         Calculate the support area for a block on the heightmap.
@@ -103,19 +101,11 @@ class Heightmap:
         return a, b, c, d
 
 
-    def generate_points_on_plane(self, size, degree, red_or_green, n_points=20, noise_level=1):
-        """
-        生成一组点，其线性回归平面为 ax + by + cz + d = 0
-        
-        参数:
-        a, b, c, d: 平面方程系数
-        n_points: 生成的点数
-        noise_level: 添加到平面上的噪声水平
-        """
+    def generate_points_on_plane(self, size, degree, red_or_green, n_points=20, noise_level=2):
         a, b, c, d = self.calculate_plane(degree, red_or_green)
 
-        x = np.random.uniform(-1.5, 2.5, n_points)
-        y = np.random.uniform(-0.75, 0.75, n_points)
+        x = np.random.uniform(PROJECTION_X[0], PROJECTION_X[1], n_points)
+        y = np.random.uniform(PROJECTION_Y[0], PROJECTION_Y[1], n_points)
         
         z_plane = (-a*x - b*y - d) / c
         
@@ -152,9 +142,12 @@ class Heightmap:
         """Get all valid positions on the heightmap."""
         valid_counts = 0
         valid_positions = []
-        while valid_counts < 50:
+        while valid_counts < 80:
             if flag == 1:
-                x = np.random.uniform(-1.5, 0)
+                if red_or_green == 'green':
+                    x = np.random.uniform(-1.5, 0)
+                else:
+                    x = np.random.uniform(0, 1.5)
                 y = np.random.uniform(-0.75, 0.75)
                 z = 0.75
                 position = (x, y, z)
@@ -162,12 +155,12 @@ class Heightmap:
                 valid_positions.append(position)
                 valid_counts += 1
             else:
-                positions = self.generate_points_on_plane(size, 10, red_or_green)
+                positions = self.generate_points_on_plane(size, DEGREE, red_or_green)
                 for position in positions:
                     new_polygon = self.get_polygon(position, size, rotation)
                     pos_multipoly = self.height[position[2]-size[2]/2]
-                    #if pos_multipoly.intersection(new_polygon).area >= INTERSECTION_THRESHOLD:
-                    if pos_multipoly.intersects(new_polygon):
+                    if pos_multipoly.intersection(new_polygon).area >= INTERSECTION_THRESHOLD:
+                    #if pos_multipoly.intersects(new_polygon):
                         valid_positions.append(position)
                         valid_counts += 1
         sorted_positions = sorted(valid_positions, key=lambda t:t[2])
@@ -347,11 +340,31 @@ class CollisionDetector:
         return False  
 
 def clear_scene():
-    for mat in bpy.data.materials[:]:
-        bpy.data.materials.remove(mat)
-    
     bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.anim.keyframe_clear_v3d(confirm=False)
     bpy.ops.object.delete(use_global=False)
+
+    for block in bpy.data.meshes:
+        if block.users == 0:
+            bpy.data.meshes.remove(block)
+
+    for block in bpy.data.materials:
+        if block.users == 0:
+            bpy.data.materials.remove(block)
+
+    for block in bpy.data.images:
+        if block.users == 0:
+            bpy.data.images.remove(block)
+    
+    for block in bpy.data.cameras:
+        if block.users == 0:
+            bpy.data.cameras.remove(block)
+    
+    for block in bpy.data.lights:
+        if block.users == 0:
+            bpy.data.lights.remove(block)
+
+    bpy.ops.ptcache.free_bake_all()
 
 def setup_camera(cam_loc=(0, -20, 2), cam_rot=(1.5, 0, 0), video_len=6, fps=30):
     """
@@ -405,7 +418,7 @@ def setup_light(light_type='POINT'):
         loc_list.append((x, y, 2.5))
     num_lights_2 = 6
     angle_step_2 = 2 * math.pi / num_lights_2
-    r2 = 4
+    r2 = 5.5
     for j in range(num_lights_2):
         angle = j * angle_step_2
         x = r2 * math.cos(angle)
@@ -557,7 +570,8 @@ def generate_a_block(block_data):
     pos = block_data['position']
     rot = block_data['rotation']
     mesh = create_block_mesh(size)
-    obj = bpy.data.objects.new(f"block_{index}",mesh)
+    
+    obj = bpy.data.objects.new(f"block_{index}", mesh)
     obj.location = Vector(pos)
     obj.rotation_euler = Euler(rot)
     create_material(obj, color, mat_name)
@@ -603,14 +617,14 @@ def setup_render(resolution_x=800, resolution_y=800, samples=128):
     cycles.use_transparent_shadows = False
 
     bpy.context.scene.frame_start = 1
-    bpy.context.scene.frame_end = 180
+    bpy.context.scene.frame_end = VIDEO_LEN * FPS
 
     bpy.context.scene.render.image_settings.file_format = 'FFMPEG'
     bpy.context.scene.render.ffmpeg.format = 'MPEG4'
 
-    bpy.context.scene.render.fps = 30
+    bpy.context.scene.render.fps = FPS
 
-def get_block_position(existing_blocks, heightmap, collisiondetector, size, new_rot, red_or_green, flag=0):
+def get_block_position(existing_blocks, heightmap, collisiondetector, new_size, new_rot, red_or_green, flag=0):
     """
     Generate a block's position.
     Args:
@@ -622,7 +636,7 @@ def get_block_position(existing_blocks, heightmap, collisiondetector, size, new_
         red_or_green: 'red' -> negative
         flag: if it's pedestal then flag equals to 1
     """
-    valid_positions = heightmap.get_valid_positions(size, new_rot, flag, red_or_green)
+    valid_positions = heightmap.get_valid_positions(new_size, new_rot, flag, red_or_green)
     if not valid_positions:
         raise ValueError("No valid positions available for the block.")
     while valid_positions:
@@ -631,8 +645,8 @@ def get_block_position(existing_blocks, heightmap, collisiondetector, size, new_
         else:
             position = random.choice(valid_positions)
         valid_positions.remove(position)
-        if not collisiondetector.check_block_collision(existing_blocks, position, size, new_rot):
-            heightmap.update_heightmap(position, size, new_rot)
+        if not collisiondetector.check_block_collision(existing_blocks, position, new_size, new_rot):
+            heightmap.update_heightmap(position, new_size, new_rot)
             return position
     raise ValueError("No valid position found for the block after checking all options.")
 
@@ -646,26 +660,34 @@ def generate_blocks_data(config, heightmap, collisiondetector, red_or_green):
         red_or_green: string 'red' or 'green'. If red, more x are negative.
     """
     blocks_data = []
-    num_blocks = 29#17#config['Scene']['num_blocks']
-    color_dic = {"yellow": 13, "blue": 14, "white": 2}#7,9,1#config['Block']['num_colors']
-    size_dic = {(0.5, 0.5, 1.5): 16, (1.5, 0.5, 0.5): 13}#8,9#config['Block']['sizes']
-    #rot_range = [0, 360]#config['Block']['rot_range']
-    #rot_range = [math.radians(rot_range[0]), math.radians(rot_range[1])]
-    rot_range = [0, 90, 180, 270]
-    rot_range = [math.radians(rot_range[0]), math.radians(rot_range[1]), math.radians(rot_range[2]), math.radians(rot_range[3])]
-    mat = 'wood'
+    num_blocks = config['Scene']['num_blocks']#29
+    color_dic = config['Scene']['num_colors']#{"yellow": 13, "blue": 14, "white": 2}#7,9,1
+    ori_size_dic = config['Scene']['sizes']#{(0.5, 0.5, 1.5): 16, (1.5, 0.5, 0.5): 13}#8,9
+    size_dic = {}
+    for key, value in ori_size_dic.items():
+        key_t = ast.literal_eval(key)
+        size_dic[key_t] = value
+    if ROT_DISCRETE == False:
+        rot_range = config['Scene']['rot_range']#[0, 360]
+        assert len(rot_range) == 2
+        rot_range = [math.radians(rot_range[0]), math.radians(rot_range[1])]
+    else:
+        rot_range = config['Scene']['rot_range']#[0, 90, 180, 270]
+        rot_range = [math.radians(rot_range[i]) for i in range(len(rot_range))]
+    mat = config['Scene']['material']#'wood'
     
-    #ped_num = random.randint(2, 5)
-    ped_num = 4
+    ped_num = random.randint(2, 5)
     for i in range(num_blocks):
         if i < ped_num:
-            new_rotation = (0,0, random.choice(rot_range))
-            #new_rotation = (0, 0, random.uniform(rot_range[0], rot_range[1]))
+            if ROT_DISCRETE == False:
+                new_rotation = (0, 0, random.uniform(rot_range[0], rot_range[1]))
+            else:
+                new_rotation = (0, 0, random.choice(rot_range))
             new_position = get_block_position(blocks_data, heightmap, collisiondetector, (0.5, 0.5, 1.5), new_rotation, red_or_green, 1)
             block_data = {
                 'index' : i,
                 'color' : random.choice([key for key in color_dic.keys() if color_dic[key] > 0]),
-                'material' : mat,#config['Block']['material'],
+                'material' : mat,
                 'size' : (0.5, 0.5, 1.5),
                 'position' : new_position,
                 'rotation' : new_rotation
@@ -675,13 +697,15 @@ def generate_blocks_data(config, heightmap, collisiondetector, red_or_green):
                 new_size = (0.5, 0.5, 1.5)
             else:
                 new_size = (1.5, 0.5, 0.5)
-            #new_rotation = (0, 0, random.uniform(rot_range[0], rot_range[1]))
-            new_rotation = (0,0, random.choice(rot_range))
+            if ROT_DISCRETE == False:
+                new_rotation = (0, 0, random.uniform(rot_range[0], rot_range[1]))
+            else:
+                new_rotation = (0, 0, random.choice(rot_range))
             new_position = get_block_position(blocks_data, heightmap, collisiondetector, new_size, new_rotation, red_or_green)
             block_data = {
                 'index' : i,
                 'color' : random.choice([key for key in color_dic.keys() if color_dic[key] > 0]),
-                'material' : mat,#config['Block']['material'],
+                'material' : mat,
                 'size' : new_size,
                 'position' : new_position,
                 'rotation' : new_rotation
@@ -689,18 +713,18 @@ def generate_blocks_data(config, heightmap, collisiondetector, red_or_green):
         color_dic[block_data['color']]-=1
         size_dic[block_data['size']]-=1
         blocks_data.append(block_data)
-    return blocks_data
+    return blocks_data, ped_num
 
 def set_block_physics(obj):
     bpy.context.view_layer.objects.active = obj
     bpy.ops.rigidbody.object_add()
     obj.rigid_body.type = 'ACTIVE'
 
-def no_physics_render(index):
-    bpy.context.scene.render.filepath = f"D:/Desktop/University/Research/Intuitive_Physics/TowerTask/{index}.mp4"
+def no_physics_render(index, config_num_colors):
+    bpy.context.scene.render.filepath = f"D:/Desktop/University/Research/Intuitive_Physics/TowerTask/{index}_{config_num_colors['yellow']}_{config_num_colors['blue']}_{config_num_colors['white']}.mp4"
     bpy.ops.render.render(animation=True, write_still=True)
 
-def physics_render(index):
+def physics_render(index, ped_num, config):
     """
     Bake and render.
     """
@@ -709,11 +733,21 @@ def physics_render(index):
     
     rigidbody_world = bpy.context.scene.rigidbody_world
     rigidbody_world.point_cache.frame_start = 1
-    rigidbody_world.point_cache.frame_end = 180
+    rigidbody_world.point_cache.frame_end = VIDEO_LEN * FPS
 
     bpy.ops.ptcache.bake_all(bake=True)
 
-    bpy.context.scene.render.filepath = f"D:/Desktop/University/Research/Intuitive_Physics/TowerTask/{index}_p.mp4"
+    num_blocks = config['Scene']['num_blocks']
+    positions = []
+    for i in range(num_blocks):
+        obj = bpy.data.objects[f'block_{i}']
+        bpy.context.scene.frame_set(VIDEO_LEN * FPS)
+        loc = obj.matrix_world.to_translation()
+        positions.append(loc)
+    tilt_color = get_final_tilt_color(positions, RED_OR_GREEN, ped_num)
+    bpy.context.scene.render.filepath = f"D:/Desktop/University/Research/Intuitive_Physics/TowerTask/{index}_p_{tilt_color}.mp4"
+    
+    bpy.context.scene.frame_set(1)
     bpy.ops.render.render(animation=True, write_still=True)
 
 def get_final_tilt_color(block_positions, red_or_green, ped_num):
@@ -745,29 +779,44 @@ def load_scene_config(yml_path='configs/config.yml'):
     with open(yml_path, 'r') as f:
         config = yaml.safe_load(f)
 
-    global SEED, INTERSECTION_THRESHOLD, FATNESS
+    global SEED, INTERSECTION_THRESHOLD, FATNESS, NUM_SCENES, RED_OR_GREEN, VIDEO_LEN, FPS
+    global DEGREE, POINT
+    global PROJECTION_X, PROJECTION_Y
+    global ROT_DISCRETE
     
-    SEED = config.get("SEED", 42) 
-    INTERSECTION_THRESHOLD = config.get("INTERSECTION_THRESHOLD", 0.01)
-    FATNESS = config.get("FATNESS", 0.5)
+    SEED = config['General'].get("SEED", 42) 
+    INTERSECTION_THRESHOLD = config['General'].get("INTERSECTION_THRESHOLD", 0.01)
+    FATNESS = config['General'].get("FATNESS", 0.5)
+    
+    NUM_SCENES = config['General'].get("NUM_SCENES", 1)
+    RED_OR_GREEN = config['General'].get("RED_OR_GREEN")
+    
+    VIDEO_LEN = config['General'].get("VIDEO_LEN", 6)
+    FPS = config['General'].get("FPS", 30)
+    
+    DEGREE = config['General'].get("DEGREE", 10)
+    POINT = config['General'].get("POINT", None)
+    
+    PROJECTION_X = config['General'].get("PROJECTION_X", [-1.5, 2.5])
+    PROJECTION_Y = config['General'].get("PROJECTION_Y", [-1.5, 1.5])#(-0.75, 0.75)
+
+    ROT_DISCRETE = config['General'].get("ROT_DISCRETE", False)
     
     random.seed(SEED)
     np.random.seed(SEED)
     return config
 
 def main():
-    path = 'D:/Desktop/University/Research/Intuitive_Physics/TowerTask/configs/config.yml'
-    config = load_scene_config(path)
-    num_scenes = 1
-    physics = False
-    red_or_green = 'green'
-    for i in range(num_scenes):
+    config_path = 'D:/Desktop/University/Research/Intuitive_Physics/TowerTask/configs/config.yml'
+    config = load_scene_config(config_path)
+    config_num_colors = {}
+    for key, value in config['Scene']['num_colors'].items():
+        config_num_colors[key] = value
+    for i in range(NUM_SCENES):
         heightmap = Heightmap()
         collisiondetector = CollisionDetector()
-        if red_or_green == 'red':
-            blocks_data = generate_blocks_data(config, heightmap, collisiondetector, 'red')
-        else:
-            blocks_data = generate_blocks_data(config, heightmap, collisiondetector, 'green')
+        blocks_data = []
+        blocks_data, ped_num = generate_blocks_data(config, heightmap, collisiondetector, RED_OR_GREEN)
         
         clear_scene()
         setup_render()
@@ -779,11 +828,9 @@ def main():
 
         setup_camera()
         setup_light()
-        #if physics:
-            #physics_render(i)
-        #else:
-            #no_physics_render(i)
-        #physics_render(i)
+        
+        no_physics_render(i, config_num_colors)
+        physics_render(i, ped_num, config)
         print(f"Finish creating scene {i}.")
 
 if __name__=="__main__":
