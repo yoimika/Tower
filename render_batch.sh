@@ -65,7 +65,7 @@ for config_file in "${config_files[@]}"; do
   echo "处理 $color 颜色的 $num_blocks 个积木块场景"
   
   # 创建输出目录（如果需要）
-  output_dir="TowerTaskVideos/${num_blocks}"
+  output_dir="TowerTaskVideos/${color}/${num_blocks}"
   mkdir -p "$output_dir"
   
   # 将配置文件复制到代码期望的固定位置

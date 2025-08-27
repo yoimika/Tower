@@ -340,13 +340,6 @@ class CollisionDetector:
         return False  
 
 def clear_scene():
-    has_keyframes = any(
-    obj.animation_data and obj.animation_data.action 
-    and any(fcurve.keyframe_points for fcurve in obj.animation_data.action.fcurves)
-    for obj in bpy.data.objects
-)
-    if has_keyframes:
-        bpy.ops.anim.keyframe_clear_v3d(confirm=False)
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
 
