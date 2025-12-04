@@ -1,2 +1,4 @@
-tmp/
+tmp/output*/
 .vscode/
+
+src/__pycache__/
