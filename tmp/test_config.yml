@@ -52,5 +52,10 @@ Scene:
   # - 当 ROT_DISCRETE=False 时：[min_deg, max_deg]，在区间内连续采样
   # - 当 ROT_DISCRETE=True  时：[deg1, deg2, ...]，在这些角度中离散采样
   rot_range: [0, 360]
-  # 方块材质，对应 Blender 中预设的材质字典（如 wood / metal / plastic 等）
-  material: "metal"
+
+  # 每种材质的方块数量（总和要等于 num_blocks）
+  # 这里示例为 5 个 metal + 3 个 wood + 2 个 stone
+  num_materials:
+    metal: 5
+    wood: 3
+    stone: 2

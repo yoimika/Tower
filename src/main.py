@@ -102,7 +102,22 @@ def generate_blocks_data(config, heightmap, collisiondetector, red_or_green):
     else:
         rot_range = config["Scene"]["rot_range"]  # [0, 90, 180, 270]
         rot_range = [math.radians(rot_range[i]) for i in range(len(rot_range))]
-    mat = config["Scene"]["material"]  #'wood'
+
+    # -------- 材质分配策略（仅支持新版写法）--------
+    # Scene.num_materials = {"wood": 10, "metal": 5, ...}
+    # 每个方块在生成时从仍有余量的材质中随机选择，从而实现“每块独立控制材质（按数量）”。
+    scene_cfg = config["Scene"]
+    if "num_materials" not in scene_cfg:
+        raise ValueError("Scene.num_materials must be provided in config.")
+
+    material_counts = {}
+    for name, cnt in scene_cfg["num_materials"].items():
+        if name not in constants.MATERIALS:
+            raise ValueError(f"Unknown material '{name}' in Scene.num_materials")
+        material_counts[name] = int(cnt)
+
+    if sum(material_counts.values()) != num_blocks:
+        raise ValueError("Sum of Scene.num_materials must be equal to Scene.num_blocks")
 
     # pedestal 数量限制：保证至少有 1 个非底座方块
     # 原本范围是 [2, 5]，这里再与 num_blocks-1 取最小值
@@ -210,12 +225,19 @@ def generate_blocks_data(config, heightmap, collisiondetector, red_or_green):
 
             block_size = new_size
 
+        # 为当前方块选择具体材质（从仍有余量的材质中随机选择）
+        available_mats = [m for m, c in material_counts.items() if c > 0]
+        if not available_mats:
+            # 理论上不应该出现；兜底避免 KeyError
+            available_mats = list(material_counts.keys())
+        mat_name = random.choice(available_mats)
+
         block_data = {
             "index": i,
             "color": random.choice(
                 [key for key in color_dic.keys() if color_dic[key] > 0]
             ),
-            "material": mat,
+            "material": mat_name,
             "size": block_size,
             "position": new_position,
             "rotation": new_rotation,
@@ -223,6 +245,7 @@ def generate_blocks_data(config, heightmap, collisiondetector, red_or_green):
 
         color_dic[block_data["color"]] -= 1
         size_dic[block_data["size"]] -= 1
+        material_counts[mat_name] -= 1
         blocks_data.append(block_data)
 
     # 所有方块生成完毕后，将整体在水平面内平移，使总质心尽量靠近原点 (0, 0)

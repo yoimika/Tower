@@ -62,8 +62,11 @@
 - **rot_range**：
   - 当 `ROT_DISCRETE=False` 时：`[min_deg, max_deg]`，在这个区间内连续随机角度（单位：度）。
   - 当 `ROT_DISCRETE=True` 时：`[deg1, deg2, ...]`，在这几个角度中离散采样。
-- **material**：
-  - 方块材质名称，需要存在于 `src/constants.py` 的 `MATERIALS` 中（如 `wood` / `metal` / `plastic` 等）。
+- **num_materials**：
+  - 用于“每个方块可以单独控制材料（按数量）”。
+  - 形式与 `num_colors` 类似，为一个字典：键是材质名，值是该材质在场景中的方块数量。
+  - 例如：`{"wood": 10, "metal": 5, "glass": 4}`。
+  - 所有数量之和必须等于 `num_blocks`，同时所有材质名需存在于 `MATERIALS` 中。
 
 ## 输出文件命名约定
 

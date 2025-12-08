@@ -1,6 +1,7 @@
 import bpy
 import bmesh
 import math
+import os
 from mathutils import Vector, Euler, Matrix
 from constants import COLORS, MATERIALS
 import settings
@@ -125,16 +126,54 @@ def create_material(obj, color, mat_name):
     mat.use_nodes = True
 
     mat.node_tree.nodes.clear()
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
 
-    bsdf = mat.node_tree.nodes.new(type="ShaderNodeBsdfPrincipled")
+    bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
     bsdf.location = (0, 0)
     for key, value in mat_params.items():
         bsdf.inputs[key].default_value = value
-    bsdf.inputs[0].default_value = COLORS[color]
 
-    output = mat.node_tree.nodes.new(type="ShaderNodeOutputMaterial")
+    # 如果有与材质同名的贴图文件，则使用贴图作为 Base Color；
+    # 否则退回到纯颜色（COLORS[color]）作为 Base Color。
+    tex_node = None
+    try:
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        project_root = os.path.dirname(script_dir)
+        tex_path = os.path.join(project_root, "texture", f"{mat_name}.png")
+
+        if os.path.exists(tex_path):
+            img = bpy.data.images.load(tex_path)
+
+            # 纹理坐标 + Mapping，用缩放来增加贴图细节密度（让纹理在方块上重复多次）
+            tex_coord = nodes.new(type="ShaderNodeTexCoord")
+            tex_coord.location = (-800, 0)
+
+            mapping = nodes.new(type="ShaderNodeMapping")
+            mapping.location = (-500, 0)
+            # 放大缩放系数，相当于在物体表面多次平铺纹理
+            mapping.inputs["Scale"].default_value[0] = 3.0
+            mapping.inputs["Scale"].default_value[1] = 3.0
+            mapping.inputs["Scale"].default_value[2] = 3.0
+
+            tex_node = nodes.new(type="ShaderNodeTexImage")
+            tex_node.location = (-200, 0)
+            tex_node.image = img
+
+            links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
+            links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
+    except Exception:
+        # 贴图加载失败时，静默回退到纯颜色
+        tex_node = None
+
+    if tex_node is not None:
+        links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
+    else:
+        bsdf.inputs["Base Color"].default_value = COLORS[color]
+
+    output = nodes.new(type="ShaderNodeOutputMaterial")
     output.location = (400, 0)
-    mat.node_tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+    links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
 
     mat.node_tree.update_tag()
     bpy.context.view_layer.update()
