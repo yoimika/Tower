@@ -151,16 +151,23 @@ def create_material(obj, color, mat_name):
 
             mapping = nodes.new(type="ShaderNodeMapping")
             mapping.location = (-500, 0)
-            # 放大缩放系数，相当于在物体表面多次平铺纹理
-            mapping.inputs["Scale"].default_value[0] = 3.0
-            mapping.inputs["Scale"].default_value[1] = 3.0
-            mapping.inputs["Scale"].default_value[2] = 3.0
+            # 适当增大缩放系数，让贴图重复但不过于极端，避免明显条纹
+            mapping.inputs["Scale"].default_value[0] = 2.0
+            mapping.inputs["Scale"].default_value[1] = 2.0
+            mapping.inputs["Scale"].default_value[2] = 1.0
 
             tex_node = nodes.new(type="ShaderNodeTexImage")
             tex_node.location = (-200, 0)
             tex_node.image = img
+            # 使用 Box 投影，可以减少在立方体上的拉伸和条纹感
+            try:
+                tex_node.projection = "BOX"
+                tex_node.projection_blend = 0.25
+            except Exception:
+                pass
 
-            links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
+            # 使用 Object 坐标做“体积式”投影，比 Generated 更不容易出现方向性条纹
+            links.new(tex_coord.outputs["Object"], mapping.inputs["Vector"])
             links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
     except Exception:
         # 贴图加载失败时，静默回退到纯颜色
