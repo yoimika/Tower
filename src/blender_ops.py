@@ -77,49 +77,31 @@ def create_camera_animation(camera, target_loc=(0, 0, 2.5)):
         empty.keyframe_insert(data_path="rotation_euler", frame=frame)
 
 
-def setup_light(light_type="POINT"):
+def setup_light(light_type="SUN"):
     """
-    Set up point lights and the background light.
+    使用单一方向光源（SUN）+ 适当的环境光，保证阴影方向统一且具有一定高光和层次。
     """
-    loc_list = []
-    r = 8
-    num_lights = 12
-    angle_step = 2 * math.pi / num_lights
-    for j in range(num_lights):
-        angle = j * angle_step
-        x = r * math.cos(angle)
-        y = r * math.sin(angle)
-        loc_list.append((x, y, 2.5))
-    num_lights_2 = 6
-    angle_step_2 = 2 * math.pi / num_lights_2
-    r2 = 5.5
-    for j in range(num_lights_2):
-        angle = j * angle_step_2
-        x = r2 * math.cos(angle)
-        y = r2 * math.sin(angle)
-        loc_list.append((x, y, 5))
+    # 主光源：模拟太阳光，固定方向，产生清晰的高光和阴影
+    sun_data = bpy.data.lights.new(name="SunLight", type="SUN")
+    # 略微降低直射光强度，减轻阴影对比度
+    sun_data.energy = 6.0
+    # 增大半影角，让阴影边缘更柔和、不那么“实”
+    sun_data.angle = math.radians(5.0)
 
-    for i, loc in enumerate(loc_list):
-        light_data = bpy.data.lights.new(name=f"SceneLight_{i}", type=light_type)
-        light_data.energy = 300
-        light_data.color = (1, 1, 1)
-        light_obj = bpy.data.objects.new(name=f"SceneLight_{i}", object_data=light_data)
-        bpy.context.collection.objects.link(light_obj)
-        light_obj.location = loc
+    sun_obj = bpy.data.objects.new(name="SunLight", object_data=sun_data)
+    bpy.context.collection.objects.link(sun_obj)
+    # 把光源抬得更高，并稍微靠后一点，让阴影更规整、更接近俯视光
+    sun_obj.location = (10.0, -15.0, 30.0)
+    # 更接近从正上方斜射下来的光线，减小地面上的拉长阴影
+    sun_obj.rotation_euler = (math.radians(70.0), 0.0, math.radians(35.0))
 
-    # 额外添加一个位于场景上方的主光源，保证地面与墙体被清晰照亮
-    key_light_data = bpy.data.lights.new(name="SceneKeyLight", type=light_type)
-    key_light_data.energy = 600
-    key_light_data.color = (1, 1, 1)
-    key_light_obj = bpy.data.objects.new(
-        name="SceneKeyLight", object_data=key_light_data
-    )
-    bpy.context.collection.objects.link(key_light_obj)
-    key_light_obj.location = (0.0, 0.0, 10.0)
-
+    # 略高一点的环境光，进一步抬高阴影区域亮度，让阴影不那么“死黑”
     bpy.context.scene.world.use_nodes = True
-    env = bpy.context.scene.world.node_tree.nodes["Background"]
-    env.inputs["Color"].default_value = (0, 0, 0, 1)
+    world = bpy.context.scene.world
+    env = world.node_tree.nodes.get("Background")
+    if env is not None:
+        env.inputs["Color"].default_value = (0.09, 0.09, 0.09, 1.0)
+        env.inputs["Strength"].default_value = 1.5
 
 
 def create_material(obj, color, mat_name):
@@ -155,16 +137,34 @@ def create_material(obj, color, mat_name):
         if os.path.exists(tex_path):
             img = bpy.data.images.load(tex_path)
 
-            # 纹理坐标 + Mapping，用缩放来增加贴图细节密度（让纹理在方块上重复多次）
+            # 纹理坐标 + Mapping
             tex_coord = nodes.new(type="ShaderNodeTexCoord")
             tex_coord.location = (-800, 0)
 
             mapping = nodes.new(type="ShaderNodeMapping")
             mapping.location = (-500, 0)
-            # 适当增大缩放系数，让贴图重复但不过于极端，避免明显条纹
-            mapping.inputs["Scale"].default_value[0] = 2.0
-            mapping.inputs["Scale"].default_value[1] = 2.0
-            mapping.inputs["Scale"].default_value[2] = 1.0
+
+            # 对于地面（WoodGround），只使用一整张贴图，且避免世界原点落在贴图的拼接交点上
+            if obj.name == "WoodGround":
+                # 半径约为 20，XY ∈ [-20, 20]，用 1/40 把它线性压缩到宽度 1
+                s = 1.0 / 40.0
+                mapping.inputs["Scale"].default_value[0] = s
+                mapping.inputs["Scale"].default_value[1] = s
+                mapping.inputs["Scale"].default_value[2] = 1.0
+                # 把世界原点 (0,0) 映射到贴图内部 0.25,0.25 位置（而不是四等分的交点 0.5,0.5）
+                mapping.inputs["Location"].default_value[0] = 0.25
+                mapping.inputs["Location"].value[1] = 0.25
+                mapping.inputs["Location"].value[2] = 0.0
+                # 关闭重复平铺：超出 0~1 的区域使用边缘颜色，避免出现额外交界
+                try:
+                    tex_node.extension = "EXTEND"
+                except Exception:
+                    pass
+            else:
+                # 其他物体仍然使用适度重复的贴图细节
+                mapping.inputs["Scale"].default_value[0] = 2.0
+                mapping.inputs["Scale"].default_value[1] = 2.0
+                mapping.inputs["Scale"].default_value[2] = 1.0
 
             tex_node = nodes.new(type="ShaderNodeTexImage")
             tex_node.location = (-200, 0)
@@ -184,9 +184,23 @@ def create_material(obj, color, mat_name):
         tex_node = None
 
     if tex_node is not None:
+        # 贴图作为 Base Color
         links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
     else:
         bsdf.inputs["Base Color"].default_value = COLORS[color]
+
+    # 略微降低粗糙度并增强高光，让表面更有光泽感
+    try:
+        if "Roughness" in bsdf.inputs:
+            rough = bsdf.inputs["Roughness"].default_value
+            bsdf.inputs["Roughness"].default_value = max(0.2, float(rough) * 0.8)
+        if "Specular IOR Level" in bsdf.inputs:
+            spec = bsdf.inputs["Specular IOR Level"].default_value
+            bsdf.inputs["Specular IOR Level"].default_value = min(
+                1.0, float(spec) + 0.1
+            )
+    except Exception:
+        pass
 
     output = nodes.new(type="ShaderNodeOutputMaterial")
     output.location = (400, 0)
@@ -200,18 +214,16 @@ def create_material(obj, color, mat_name):
     else:
         obj.data.materials.append(mat)
 
-    # obj.visible_shadow = False
-    obj.visible_diffuse = False
-    obj.visible_glossy = False
-    obj.visible_transmission = False
-
-    cycles_obj = obj.cycles
-    cycles_obj.is_shadow_catcher = False
-    # cycles_obj.case_shadow = False
-    cycles_obj.diffuse_bounce = 0
-    cycles_obj.glossy_bounce = 0
-    cycles_obj.transmission_bounce = 0
-    cycles_obj.transparent_bounce = 0
+    # 确保物体参与漫反射和高光、阴影计算
+    try:
+        obj.visible_diffuse = True
+        obj.visible_glossy = True
+        obj.visible_transmission = True
+        obj.visible_shadow = True
+        cycles_obj = obj.cycles
+        cycles_obj.is_shadow_catcher = False
+    except Exception:
+        pass
 
     obj.data.update_tag()
     bpy.context.view_layer.update()
@@ -219,8 +231,8 @@ def create_material(obj, color, mat_name):
 
 def create_ground():
     """
-    创建用于物理模拟的斜坡地面，以及可见的木质地板与围墙。
-    不再包含红/绿区域，只保留单一方向的斜坡。
+    创建用于物理模拟的斜坡地面和一整块木质地板。
+    仅保留地面，不再在四周生成围墙。
     """
     bpy.ops.mesh.primitive_circle_add(
         vertices=100, radius=20, fill_type="TRIFAN", location=(0, 0, 0)
@@ -241,68 +253,18 @@ def create_ground():
     ground.hide_render = True
     ground.hide_viewport = True
 
-    # === 可见的木质地面 ===
-    # 复制一份网格，作为真正渲染出来的木头地板
+    # === 可见的“桌面”地板，使用塑料贴图 ===
+    # 复制一份网格，作为真正渲染出来的桌面（大块贴图）
     wood_mesh = mesh.copy()
     wood_mesh.name = "WoodGroundMesh"
     wood_ground = bpy.data.objects.new("WoodGround", wood_mesh)
     bpy.context.scene.collection.objects.link(wood_ground)
     wood_ground.location = ground.location
     wood_ground.rotation_euler = ground.rotation_euler
-    create_material(wood_ground, "white", "wood")
+    # 使用 plastic 材质，会自动优先加载 texture/plastic.png 作为大贴图
+    create_material(wood_ground, "white", "plastic")
     bpy.context.view_layer.objects.active = wood_ground
     bpy.ops.object.shade_smooth()
-
-    # === 围绕场景的石头与金属墙体 ===
-    wall_height = 4.0
-    wall_length = 20.0
-    wall_thickness = 0.5
-
-    # 前后石墙（石头材质）
-    bpy.ops.mesh.primitive_cube_add(
-        size=1.0, location=(0.0, -wall_length / 2.0, wall_height / 2.0)
-    )
-    front_wall = bpy.context.object
-    front_wall.name = "StoneWall_Front"
-    front_wall.scale = (wall_length / 2.0, wall_thickness / 2.0, wall_height / 2.0)
-    create_material(front_wall, "white", "stone")
-    bpy.context.view_layer.objects.active = front_wall
-    bpy.ops.rigidbody.object_add()
-    front_wall.rigid_body.type = "PASSIVE"
-
-    bpy.ops.mesh.primitive_cube_add(
-        size=1.0, location=(0.0, wall_length / 2.0, wall_height / 2.0)
-    )
-    back_wall = bpy.context.object
-    back_wall.name = "StoneWall_Back"
-    back_wall.scale = (wall_length / 2.0, wall_thickness / 2.0, wall_height / 2.0)
-    create_material(back_wall, "white", "stone")
-    bpy.context.view_layer.objects.active = back_wall
-    bpy.ops.rigidbody.object_add()
-    back_wall.rigid_body.type = "PASSIVE"
-
-    # 左右金属墙（金属材质）
-    bpy.ops.mesh.primitive_cube_add(
-        size=1.0, location=(-wall_length / 2.0, 0.0, wall_height / 2.0)
-    )
-    left_wall = bpy.context.object
-    left_wall.name = "MetalWall_Left"
-    left_wall.scale = (wall_thickness / 2.0, wall_length / 2.0, wall_height / 2.0)
-    create_material(left_wall, "white", "metal")
-    bpy.context.view_layer.objects.active = left_wall
-    bpy.ops.rigidbody.object_add()
-    left_wall.rigid_body.type = "PASSIVE"
-
-    bpy.ops.mesh.primitive_cube_add(
-        size=1.0, location=(wall_length / 2.0, 0.0, wall_height / 2.0)
-    )
-    right_wall = bpy.context.object
-    right_wall.name = "MetalWall_Right"
-    right_wall.scale = (wall_thickness / 2.0, wall_length / 2.0, wall_height / 2.0)
-    create_material(right_wall, "white", "metal")
-    bpy.context.view_layer.objects.active = right_wall
-    bpy.ops.rigidbody.object_add()
-    right_wall.rigid_body.type = "PASSIVE"
 
 
 def create_block_mesh(size):
@@ -378,15 +340,16 @@ def setup_render(resolution_x=800, resolution_y=800, samples=128):
 
     cycles = bpy.context.scene.cycles
     cycles.device = "GPU"
-    cycles.max_bounces = 0
-    cycles.diffuse_bounces = 0
-    cycles.glossy_bounces = 0
-    cycles.transmission_bounces = 0
-    cycles.transparent_max_bounces = 0
+    # 开启适度的光线反弹和高光反射，提高整体立体感与材质细节
+    cycles.max_bounces = 6
+    cycles.diffuse_bounces = 2
+    cycles.glossy_bounces = 3
+    cycles.transmission_bounces = 2
+    cycles.transparent_max_bounces = 4
 
     cycles.caustics_reflective = False
     cycles.caustics_refractive = False
-    cycles.use_transparent_shadows = False
+    cycles.use_transparent_shadows = True
 
     bpy.context.scene.frame_start = 1
     bpy.context.scene.frame_end = settings.VIDEO_LEN * settings.FPS

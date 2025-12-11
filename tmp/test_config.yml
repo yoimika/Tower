@@ -2,7 +2,7 @@ General:
   # 随机数种子，固定后每次生成的场景可复现
   SEED: 42
   # 高度图上允许的最小重叠面积，越大越“保守”，方块越难放下
-  INTERSECTION_THRESHOLD: 0.01
+  INTERSECTION_THRESHOLD: 0.1
   # 选位置时偏向排序后第一个位置的概率（0~1），越大塔越“胖”，越集中
   FATNESS: 0.5
   # 本次一次性要生成的场景数量
