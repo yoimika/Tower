@@ -1,0 +1,40 @@
+General:
+  SEED: 777
+  INTERSECTION_THRESHOLD: 0.1
+  FATNESS: 0.5
+  NUM_SCENES: 250
+  VIDEO_LEN: 3
+  FPS: 30
+  DEGREE: 0
+  POINT:
+  PROJECTION_X: [-1.5, 2.5]
+  PROJECTION_Y: [-1.5, 1.5]
+  ROT_DISCRETE: False
+  OUTPUT_PATH: "output/ds_stone_random_slope"
+  RENDER_VIDEO: False
+  SAVE_LAST_FRAME_IMAGE: True
+  SAVE_FIRST_FRAME_IMAGE: True
+  STACK_ON_EXISTING_PROB: 0.5
+
+Scene:
+  # 块数与中高塔相当，但以石头为主
+  num_blocks: 18
+  num_colors:
+    yellow: 5
+    blue: 5
+    green: 4
+    red: 4
+
+  sizes:
+    (0.5, 0.5, 0.5): 6
+    (0.5, 0.5, 1.5): 6
+    (1.0, 0.5, 1.0): 6
+
+  rot_range: [0, 360]
+
+  num_materials:
+    wood: 4
+    metal: 4
+    stone: 10
+
+

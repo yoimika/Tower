@@ -44,9 +44,6 @@ def get_block_position(
     if not valid_positions:
         raise ValueError("No valid positions available for the block.")
 
-    # 备份一份候选位置，用于极端情况下的兜底策略（避免直接报错中断整个场景生成）
-    candidate_positions = list(valid_positions)
-
     while valid_positions:
         if np.random.uniform(0.0, 1.0) < settings.FATNESS:
             position = valid_positions[0]
@@ -59,26 +56,12 @@ def get_block_position(
             heightmap.update_heightmap(position, new_size, new_rot)
             return position
 
-    # 正常情况下不应走到这里。如果所有候选位置都与已有方块发生碰撞，
-    # 为了保证脚本不会因为极端几何配置直接失败，这里退一步：
-    # 允许一定程度的初始重叠，直接使用第一个候选位置作为兜底。
-    fallback_pos = candidate_positions[0]
-
-    # 极端情况下 heightmap 可能因为多边形重叠而再次抛出异常；
-    # 这里捕获后仅打印警告，不再让整个流程中断。
-    try:
-        heightmap.update_heightmap(fallback_pos, new_size, new_rot)
-    except ValueError as e:
-        print(
-            "[WARN] get_block_position: fallback position causes heightmap "
-            f"intersection ({e}), skip updating heightmap for this block."
-        )
-
-    print(
-        "[WARN] get_block_position: all candidates collided, "
-        "using fallback position with possible overlap."
+    # 如果所有候选位置都会与已有方块发生碰撞，则认为当前几何配置不可行，
+    # 直接报错让上层决定是否跳过该场景 / 重新采样，而不是强行允许方块重叠。
+    raise ValueError(
+        "All candidate positions collide with existing blocks; "
+        "no non-overlapping placement found for this block."
     )
-    return fallback_pos
 
 
 def generate_blocks_data(config, heightmap, collisiondetector):
@@ -276,6 +259,22 @@ def generate_blocks_data(config, heightmap, collisiondetector):
             x, y, z = b["position"]
             b["position"] = (x + dx, y + dy, z)
 
+        # 额外一步：让底座方块“贴在地面”上，避免出现整体悬空的情况。
+        # 这里假设水平地面位于 z=0（即 DEGREE=0 的常见设置）。
+        # - 对所有底座方块（index < ped_num），计算它们的底面高度 bottom_z
+        # - 找到最小的 bottom_z，并整体下移，使该底面刚好落在 z=0
+        if ped_num > 0 and settings.DEGREE == 0:
+            pedestal_blocks = [b for b in blocks_data if b["index"] < ped_num]
+            if pedestal_blocks:
+                min_bottom_z = min(
+                    b["position"][2] - b["size"][2] / 2.0 for b in pedestal_blocks
+                )
+                dz = -min_bottom_z
+
+                for b in blocks_data:
+                    x, y, z = b["position"]
+                    b["position"] = (x, y, z + dz)
+
     return blocks_data, ped_num
 
 
@@ -306,28 +305,34 @@ def main():
     print(f"Total scenes to generate: {total_scenes}")
 
     for i in range(total_scenes):
-        clear_scene()
+        try:
+            clear_scene()
 
-        heightmap = Heightmap()
-        collisiondetector = CollisionDetector()
+            heightmap = Heightmap()
+            collisiondetector = CollisionDetector()
 
-        blocks_data, ped_num = generate_blocks_data(
-            config, heightmap, collisiondetector
-        )
+            blocks_data, ped_num = generate_blocks_data(
+                config, heightmap, collisiondetector
+            )
 
-        setup_render()
+            setup_render()
 
-        create_mesh("PLANE")
+            create_mesh("PLANE")
 
-        for block_data in blocks_data:
-            create_mesh("BLOCK", block_data)
+            for block_data in blocks_data:
+                create_mesh("BLOCK", block_data)
 
-        setup_camera()
-        setup_light()
+            setup_camera()
+            setup_light()
 
-        # no_physics_render(i, config_num_colors)
-        physics_render(i, ped_num, config)
-        print(f"Finish creating scene {i + 1}/{total_scenes}.")
+            # no_physics_render(i, config_num_colors)
+            physics_render(i, ped_num, config)
+            print(f"Finish creating scene {i + 1}/{total_scenes}.")
+        except ValueError as e:
+            # 如果某个方块在当前几何配置下找不到“非重叠”的合法位置，
+            # 直接跳过该场景，继续下一个，而不是让整个 Blender 进程报错退出。
+            print(f"[WARN] Skip scene {i} due to placement error: {e}")
+            continue
 
 
 if __name__ == "__main__":

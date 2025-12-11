@@ -53,6 +53,8 @@ def setup_camera(cam_loc=(0, -8, 4), cam_rot=(math.radians(60), 0, 0)):
     cam_obj.location = cam_loc
     cam_obj.rotation_euler = cam_rot
     bpy.context.scene.camera = cam_obj
+    # 生成数据集时使用“固定视角”：相机朝向和位置在整个序列中保持不变，
+    # 仅通过 create_camera_animation 设置时间轴范围，不再让相机绕塔旋转。
     create_camera_animation(cam_obj)
 
 
@@ -61,20 +63,11 @@ def create_camera_animation(camera, target_loc=(0, 0, 2.5)):
     empty = bpy.context.object
     empty.name = "CameraTarget"
 
-    camera.parent = empty
-
     total_frames = settings.VIDEO_LEN * settings.FPS
     bpy.context.scene.frame_end = total_frames
 
-    for frame in [1, total_frames]:
-        bpy.context.scene.frame_set(frame)
-
-        if frame == 1:
-            empty.rotation_euler = (0, 0, 0)
-        else:
-            empty.rotation_euler = (0, 0, math.radians(360))
-
-        empty.keyframe_insert(data_path="rotation_euler", frame=frame)
+    # 固定视角：不再给相机添加环绕动画，只设置时间轴范围。
+    # 如需恢复绕塔旋转，只需重新将 camera.parent = empty 并设置关键帧。
 
 
 def setup_light(light_type="SUN"):
@@ -354,6 +347,7 @@ def setup_render(resolution_x=800, resolution_y=800, samples=128):
     bpy.context.scene.frame_start = 1
     bpy.context.scene.frame_end = settings.VIDEO_LEN * settings.FPS
 
+    # 默认仍然配置为视频输出；是否真的生成 mp4 取决于 General.RENDER_VIDEO。
     bpy.context.scene.render.image_settings.file_format = "FFMPEG"
     bpy.context.scene.render.ffmpeg.format = "MPEG4"
 
@@ -366,18 +360,28 @@ def set_block_physics(obj):
     obj.rigid_body.type = "ACTIVE"
 
 
-def is_block_hitting_ground(loc):
+def is_block_hitting_ground(obj, distance_epsilon: float = 0.05) -> bool:
     """
-    根据方块在世界坐标中的位置，射线检测到物理地面，
-    只关心是否击中，不再区分红/绿区域。
-    返回 True / False。
+    判断一个方块是否“真正接触到地面”。
+
+    早期版本只要从方块上方向下打射线击中 PhysicsGround 就视为命中，
+    这样无论方块离地多高，都会被算作“击中地面”，导致所有场景都被判为坍塌。
+
+    这里改为：
+        1. 仍然从方块上方向下对 PhysicsGround 做 ray_cast，得到地面交点 z_hit
+        2. 计算方块世界空间包围盒的最低点 z_min
+        3. 当 (z_min - z_hit) <= distance_epsilon 时，认为方块已经落到地面附近
     """
     ground = bpy.data.objects.get("PhysicsGround")
     if ground is None:
         return False
 
-    # 使用 ground 自身的 ray_cast，避免被其他物体（塔块）挡住
-    # 需要把射线转换到 ground 的局部坐标系
+    # 计算方块世界空间 AABB 的最低 z
+    bbox_world = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+    z_min = min(v.z for v in bbox_world)
+
+    # 从方块正上方向下发射一条射线，求它与 PhysicsGround 的交点高度
+    loc = obj.matrix_world.to_translation()
     origin_world = Vector((loc.x, loc.y, loc.z + 10.0))
     direction_world = Vector((0.0, 0.0, -1.0))
 
@@ -385,8 +389,14 @@ def is_block_hitting_ground(loc):
     origin_local = inv_mat @ origin_world
     direction_local = (inv_mat.to_3x3() @ direction_world).normalized()
 
-    success, _, _, _ = ground.ray_cast(origin_local, direction_local)
-    return bool(success)
+    success, hit_loc_local, _, _ = ground.ray_cast(origin_local, direction_local)
+    if not success:
+        return False
+
+    hit_loc_world = ground.matrix_world @ hit_loc_local
+
+    # 当方块底部已经非常接近地面（或略有穿插）时，认为它“砸到地面”
+    return (z_min - hit_loc_world.z) <= distance_epsilon
 
 
 def no_physics_render(index, config_num_colors):
@@ -418,6 +428,15 @@ def physics_render(index, ped_num, config):
 
     scene = bpy.context.scene
 
+    # 每个样本（场景）使用一个独立的子文件夹：<OUTPUT_PATH>/<index>/
+    # 其中包含：
+    #   - meta.json
+    #   - frame_0001.png, frame_0002.png, ...（如果启用 SAVE_ALL_FRAMES_IMAGES）
+    #   - f_init.png（可选）
+    #   - p_<state>.png / p_<state>.mp4（可选）
+    scene_dir = os.path.join(settings.OUTPUT_PATH, f"{index}")
+    os.makedirs(scene_dir, exist_ok=True)
+
     # 可选：在物理模拟前渲染第一帧静态图（初始状态）
     if settings.SAVE_FIRST_FRAME_IMAGE:
         render = scene.render
@@ -427,7 +446,7 @@ def physics_render(index, ped_num, config):
 
         scene.frame_set(1)
         render.image_settings.file_format = "PNG"
-        render.filepath = settings.OUTPUT_PATH + f"/{index}_f_init.png"
+        render.filepath = os.path.join(scene_dir, "f_init.png")
         bpy.ops.render.render(animation=False, write_still=True)
 
         # 恢复原设置
@@ -438,25 +457,42 @@ def physics_render(index, ped_num, config):
 
     bpy.ops.ptcache.bake_all(bake=True)
 
-    # 在最后一帧获取每个方块的位置，统计有多少非底座方块最终“砸到地面”。
-    # 不再区分红/绿区域，只关心是否发生了倒塌。
-    hit_count = 0
-    bpy.context.scene.frame_set(settings.VIDEO_LEN * settings.FPS)
+    # === 记录整段物理过程中的方块状态序列 ===
+    total_frames = settings.VIDEO_LEN * settings.FPS
+    state_sequence = []
 
-    for i in range(num_blocks):
-        obj = bpy.data.objects[f"block_{i}"]
-        loc = obj.matrix_world.to_translation()
+    # 倒塌过程统计：每一帧有多少非底座方块已经“砸到地面”
+    per_frame_hit_counts = []
 
-        # 跳过底座方块
-        if i < ped_num:
-            continue
+    for frame in range(1, total_frames + 1):
+        bpy.context.scene.frame_set(frame)
+        frame_states = []
+        hit_count_this_frame = 0
 
-        if is_block_hitting_ground(loc):
-            hit_count += 1
+        for i in range(num_blocks):
+            obj = bpy.data.objects[f"block_{i}"]
+            loc = obj.matrix_world.to_translation()
+            rot = obj.matrix_world.to_euler()
 
-    # colors 非空表示至少有一个非底座方块最终击中了地面，
-    # 将其视为“塔发生了倒塌”；否则认为“未倒塌”。
-    if hit_count == 0:
+            # 仅对非底座方块进行“是否砸到地面”的检测
+            if i >= ped_num and is_block_hitting_ground(obj):
+                hit_count_this_frame += 1
+
+            frame_states.append(
+                {
+                    "index": i,
+                    "location": [float(loc.x), float(loc.y), float(loc.z)],
+                    "rotation_euler": [float(rot.x), float(rot.y), float(rot.z)],
+                }
+            )
+
+        state_sequence.append(frame_states)
+        per_frame_hit_counts.append(hit_count_this_frame)
+
+    # 在最后一帧，根据命中地面的非底座方块数量判断“倒塌 / 未倒塌”
+    final_hit_count = per_frame_hit_counts[-1] if per_frame_hit_counts else 0
+
+    if final_hit_count == 0:
         collapse_state = "stable"  # 未倒塌
     else:
         collapse_state = "collapsed"  # 发生倒塌
@@ -464,8 +500,48 @@ def physics_render(index, ped_num, config):
     # 在控制台打印当前场景的二分类结果
     print(
         f"[Scene {index}] collapse_state = {collapse_state}, "
-        f"hit_ground_blocks = {hit_count}"
+        f"hit_ground_blocks_final = {final_hit_count}"
     )
+
+    # 将方块状态序列与倒塌过程信息保存为 JSON（每个场景一个文件）
+    # 这里只需要 json，os 已在文件顶部全局导入，避免在函数内部重新 import os
+    # 造成 Python 把 os 当作局部变量，从而在前面使用 os.path.join 时触发 UnboundLocalError。
+    import json
+
+    meta = {
+        "scene_index": int(index),
+        "num_blocks": int(num_blocks),
+        "pedestal_blocks": int(ped_num),
+        "video_len": float(settings.VIDEO_LEN),
+        "fps": int(settings.FPS),
+        "collapse_state": collapse_state,
+        # 每一帧有多少非底座方块已经击中地面，可视作“倒塌过程序列”
+        "per_frame_hit_counts": per_frame_hit_counts,
+        # 方块坐标与姿态的完整时间序列
+        "state_sequence": state_sequence,
+    }
+
+    meta_path = os.path.join(scene_dir, "meta.json")
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False)
+
+    # 如果需要导出整段模拟过程中的所有帧图像
+    if settings.SAVE_ALL_FRAMES_IMAGES:
+        render = scene.render
+        prev_filepath = render.filepath
+        prev_file_format = render.image_settings.file_format
+        prev_ffmpeg_format = getattr(render, "ffmpeg", None)
+
+        # 以 PNG 序列形式导出动画，文件名形如：<scene_dir>/frame_0001.png
+        render.image_settings.file_format = "PNG"
+        render.filepath = os.path.join(scene_dir, "frame_")
+        bpy.ops.render.render(animation=True, write_still=True)
+
+        # 恢复原设置
+        render.image_settings.file_format = prev_file_format
+        render.filepath = prev_filepath
+        if prev_ffmpeg_format is not None:
+            render.ffmpeg.format = prev_ffmpeg_format.format
 
     # 如果需要保存最后一帧图像
     if settings.SAVE_LAST_FRAME_IMAGE:
@@ -479,7 +555,7 @@ def physics_render(index, ped_num, config):
 
         scene.frame_set(last_frame)
         render.image_settings.file_format = "PNG"
-        render.filepath = settings.OUTPUT_PATH + f"/{index}_p_{collapse_state}.png"
+        render.filepath = os.path.join(scene_dir, f"p_{collapse_state}.png")
         bpy.ops.render.render(animation=False, write_still=True)
 
         # 恢复原设置
@@ -493,6 +569,6 @@ def physics_render(index, ped_num, config):
         return collapse_state
 
     # 渲染整段视频
-    scene.render.filepath = settings.OUTPUT_PATH + f"/{index}_p_{collapse_state}.mp4"
+    scene.render.filepath = os.path.join(scene_dir, f"p_{collapse_state}.mp4")
     scene.frame_set(1)
     bpy.ops.render.render(animation=True, write_still=True)

@@ -1,0 +1,46 @@
+General:
+  # 随机数种子，可以按需改成不同值以获得更多样本
+  SEED: 42
+  INTERSECTION_THRESHOLD: 0.1
+  FATNESS: 0.4
+  # 本配置生成的场景数量（建议与其他配置一起凑到约 1000）
+  NUM_SCENES: 250
+  VIDEO_LEN: 3
+  FPS: 30
+  DEGREE: 0
+  POINT:
+  PROJECTION_X: [-1.2, 2.8]
+  PROJECTION_Y: [-1.5, 1.5]
+  ROT_DISCRETE: False
+  # 输出路径：相对当前工程根目录
+  OUTPUT_PATH: "output/ds_wood_low_slope"
+  # 为了加快生成，这里只导出首帧 / 末帧图片和 JSON，不渲染整段视频
+  RENDER_VIDEO: False
+  SAVE_LAST_FRAME_IMAGE: True
+  SAVE_FIRST_FRAME_IMAGE: True
+  # 适中堆叠概率：塔总体偏稳定、层数有限
+  STACK_ON_EXISTING_PROB: 0.4
+
+Scene:
+  # 相对较矮、小规模的塔
+  num_blocks: 12
+  num_colors:
+    yellow: 4
+    blue: 4
+    green: 2
+    red: 2
+
+  # 多种尺寸 + 对应数量（总和要等于 num_blocks）
+  sizes:
+    (0.5, 0.5, 0.5): 4        # 小方块
+    (0.5, 0.5, 1.5): 4        # 竖条
+    (1.0, 0.5, 0.5): 4        # 中等横条
+
+  # 连续旋转范围
+  rot_range: [0, 360]
+
+  # 全木质塔，便于与其他材质组合做对比
+  num_materials:
+    wood: 12
+
+

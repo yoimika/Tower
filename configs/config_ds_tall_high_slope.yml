@@ -1,0 +1,42 @@
+General:
+  SEED: 2025
+  INTERSECTION_THRESHOLD: 0.08
+  FATNESS: 0.6
+  NUM_SCENES: 250
+  VIDEO_LEN: 3
+  FPS: 30
+  DEGREE: 0
+  POINT:
+  PROJECTION_X: [-1.5, 2.5]
+  PROJECTION_Y: [-1.5, 1.5]
+  ROT_DISCRETE: False
+  OUTPUT_PATH: "output/ds_tall_high_slope"
+  RENDER_VIDEO: False
+  SAVE_LAST_FRAME_IMAGE: True
+  SAVE_FIRST_FRAME_IMAGE: True
+  # 较高的堆叠概率，生成高塔和悬挑结构
+  STACK_ON_EXISTING_PROB: 0.8
+
+Scene:
+  # 更高、更瘦的塔，倒塌概率更高
+  num_blocks: 20
+  num_colors:
+    yellow: 6
+    blue: 6
+    green: 4
+    red: 4
+
+  sizes:
+    (0.5, 0.5, 1.5): 10       # 竖直长条，形成高层结构
+    (1.5, 0.5, 0.5): 6        # 横条，做支撑或悬挑
+    (0.5, 0.5, 0.5): 4        # 小方块，增加局部扰动
+
+  rot_range: [0, 360]
+
+  # 以金属和石块为主，整体“更重更硬”，便于观察材质差异
+  num_materials:
+    wood: 4
+    metal: 10
+    stone: 6
+
+

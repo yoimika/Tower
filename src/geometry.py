@@ -117,9 +117,11 @@ class Heightmap:
         valid_positions = []
         while valid_counts < 80:
             if flag == 1:
-                # 底座方块：在原点附近的矩形区域均匀采样
-                x = np.random.uniform(-1.5, 1.5)
-                y = np.random.uniform(-0.75, 0.75)
+                # 底座方块：在原点附近的更小矩形区域均匀采样，使底座更“集中”
+                # 原来范围较大：x ∈ [-1.5, 1.5], y ∈ [-0.75, 0.75]
+                # 这里收缩到更小的区域（如果需要再更集中，可以继续缩小这个范围）
+                x = np.random.uniform(-0.6, 0.6)
+                y = np.random.uniform(-0.4, 0.4)
                 z = 0.75
                 position = (x, y, z)
                 new_polygon = self.get_polygon(position, size, rotation)
